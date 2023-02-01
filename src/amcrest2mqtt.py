@@ -263,15 +263,15 @@ if home_assistant:
         mqtt_publish(topics["home_assistant_legacy"]["doorbell"], "")
         mqtt_publish(
             topics["home_assistant"]["doorbell"],
-            base_config
-            | {
+            {**base_config, 
+            **{
                 "state_topic": topics["doorbell"],
                 "payload_on": "on",
                 "payload_off": "off",
                 "icon": "mdi:doorbell",
                 "name": doorbell_name,
                 "unique_id": f"{serial_number}.doorbell",
-            },
+            }},
             json=True,
         )
 
@@ -279,38 +279,38 @@ if home_assistant:
         mqtt_publish(topics["home_assistant_legacy"]["human"], "")
         mqtt_publish(
             topics["home_assistant"]["human"],
-            base_config
-            | {
+            {**base_config,
+            **{
                 "state_topic": topics["human"],
                 "payload_on": "on",
                 "payload_off": "off",
                 "device_class": "motion",
                 "name": f"{device_name} Human",
                 "unique_id": f"{serial_number}.human",
-            },
+            }},
             json=True,
         )
 
     mqtt_publish(topics["home_assistant_legacy"]["motion"], "")
     mqtt_publish(
         topics["home_assistant"]["motion"],
-        base_config
-        | {
+        {**base_config,
+        **{
             "state_topic": topics["motion"],
             "payload_on": "on",
             "payload_off": "off",
             "device_class": "motion",
             "name": f"{device_name} Motion",
             "unique_id": f"{serial_number}.motion",
-        },
+        }},
         json=True,
     )
 
     mqtt_publish(topics["home_assistant_legacy"]["version"], "")
     mqtt_publish(
         topics["home_assistant"]["version"],
-        base_config
-        | {
+        {**base_config, 
+        **{
             "state_topic": topics["config"],
             "value_template": "{{ value_json.sw_version }}",
             "icon": "mdi:package-up",
@@ -318,15 +318,15 @@ if home_assistant:
             "unique_id": f"{serial_number}.version",
             "entity_category": "diagnostic",
             "enabled_by_default": False
-        },
+        }},
         json=True,
     )
 
     mqtt_publish(topics["home_assistant_legacy"]["serial_number"], "")
     mqtt_publish(
         topics["home_assistant"]["serial_number"],
-        base_config
-        | {
+        {**base_config,
+        **{
             "state_topic": topics["config"],
             "value_template": "{{ value_json.serial_number }}",
             "icon": "mdi:alphabetical-variant",
@@ -334,15 +334,15 @@ if home_assistant:
             "unique_id": f"{serial_number}.serial_number",
             "entity_category": "diagnostic",
             "enabled_by_default": False
-        },
+        }},
         json=True,
     )
 
     mqtt_publish(topics["home_assistant_legacy"]["host"], "")
     mqtt_publish(
         topics["home_assistant"]["host"],
-        base_config
-        | {
+        {**base_config,
+        **{
             "state_topic": topics["config"],
             "value_template": "{{ value_json.host }}",
             "icon": "mdi:ip-network",
@@ -350,7 +350,7 @@ if home_assistant:
             "unique_id": f"{serial_number}.host",
             "entity_category": "diagnostic",
             "enabled_by_default": False
-        },
+        }},
         json=True,
     )
 
@@ -358,8 +358,8 @@ if home_assistant:
         mqtt_publish(topics["home_assistant_legacy"]["storage_used_percent"], "")
         mqtt_publish(
             topics["home_assistant"]["storage_used_percent"],
-            base_config
-            | {
+            {**base_config,
+            **{
                 "state_topic": topics["storage_used_percent"],
                 "unit_of_measurement": "%",
                 "icon": "mdi:micro-sd",
@@ -367,37 +367,37 @@ if home_assistant:
                 "object_id": f"{device_slug}_storage_used_percent",
                 "unique_id": f"{serial_number}.storage_used_percent",
                 "entity_category": "diagnostic",
-            },
+            }},
             json=True,
         )
 
         mqtt_publish(topics["home_assistant_legacy"]["storage_used"], "")
         mqtt_publish(
             topics["home_assistant"]["storage_used"],
-            base_config
-            | {
+            {**base_config,
+            **{
                 "state_topic": topics["storage_used"],
                 "unit_of_measurement": "GB",
                 "icon": "mdi:micro-sd",
                 "name": f"{device_name} Storage Used",
                 "unique_id": f"{serial_number}.storage_used",
                 "entity_category": "diagnostic",
-            },
+            }},
             json=True,
         )
 
         mqtt_publish(topics["home_assistant_legacy"]["storage_total"], "")
         mqtt_publish(
             topics["home_assistant"]["storage_total"],
-            base_config
-            | {
+            {**base_config,
+            **{
                 "state_topic": topics["storage_total"],
                 "unit_of_measurement": "GB",
                 "icon": "mdi:micro-sd",
                 "name": f"{device_name} Storage Total",
                 "unique_id": f"{serial_number}.storage_total",
                 "entity_category": "diagnostic",
-            },
+            }},
             json=True,
         )
 
@@ -420,10 +420,12 @@ log("Listening for events...")
 async def main():
     try:
         async for code, payload in camera.async_event_actions("All"):
+            log(str(payload))
+            
             if (is_ad110 and code == "ProfileAlarmTransmit") or (code == "VideoMotion" and not is_ad110):
                 motion_payload = "on" if payload["action"] == "Start" else "off"
                 mqtt_publish(topics["motion"], motion_payload)
-            elif code == "CrossRegionDetection" and payload["data"]["ObjectType"] == "Human":
+            elif code == "CrossRegionDetection" and payload["data"]["Object"]["ObjectType"] == "Human":
                 human_payload = "on" if payload["action"] == "Start" else "off"
                 mqtt_publish(topics["human"], human_payload)
             elif code == "_DoTalkAction_":
@@ -431,10 +433,23 @@ async def main():
                 mqtt_publish(topics["doorbell"], doorbell_payload)
 
             mqtt_publish(topics["event"], payload, json=True)
-            log(str(payload))
 
     except AmcrestError as error:
         log(f"Amcrest error: {error}", level="ERROR")
         exit_gracefully(1)
 
-asyncio.run(main())
+try:
+    loop = asyncio.get_running_loop()
+except RuntimeError:  # 'RuntimeError: There is no current event loop...'
+    loop = None
+
+if loop and loop.is_running():
+    print('Async event loop already running. Adding coroutine to the event loop.')
+    tsk = loop.create_task(main())
+    # ^-- https://docs.python.org/3/library/asyncio-task.html#task-object
+    # Optionally, a callback function can be executed when the coroutine completes
+    tsk.add_done_callback(
+        lambda t: print('Task done.'))
+else:
+    print('Starting new event loop')
+    asyncio.run(main())
